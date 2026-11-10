@@ -1,0 +1,29 @@
+stateDiagram-v2
+    [*] --> Criada : eventoRecebido / salvar()
+
+    Criada --> Enfileirada : validarEvento [destinatarioValido] / atualizarStatus(ENFILEIRADA)
+    Criada --> Descartada : validarEvento [destinatarioInvalido] / atualizarStatus(DESCARTADA)
+
+    Enfileirada --> Enviando : iniciarEnvio [tentativa ≤ 3] / montarPayload()
+
+    state Enviando {
+        [*] --> Transmitindo
+        Transmitindo --> AguardandoConfirmacao : respostaAceita [resposta = ACEITO] / atualizarStatus(AGUARDANDO_CONFIRMACAO)
+    }
+
+    Enviando --> Entregue : confirmacaoRecebida [aceitoPeloProvedor] / atualizarStatus(ENTREGUE)
+    Enviando --> Reagendada : falhaEnvio [tentativa ≤ 2] / registrarTentativa()
+    Enviando --> Falha : falhaEnvio [tentativa = 3] / publicarAlertaFalha()
+    Reagendada --> Enviando : backoffExpirado [tentativa ≤ 3] / reenviar()
+
+    Entregue --> [*]
+    Falha --> [*]
+    Descartada --> [*]
+
+    Enfileirada : entry / registrarTimestampFila()
+    Enfileirada : do / aguardarDespacho()
+    Enfileirada : exit / removerDaFilaLogica()
+
+    Transmitindo : entry / abrirSessaoHTTPS()
+    Transmitindo : do / enviar(PayloadNotificacaoDTO)
+    Transmitindo : exit / registrarLatencia()
