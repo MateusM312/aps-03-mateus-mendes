@@ -1,0 +1,43 @@
+@startuml workspace
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+title C4 Nível 3 — Componentes: Notificações (FabLab Manager)
+
+Person(admin, "Administrador/Técnico", "Aprova ou nega reservas e recebe alertas de falha")
+Person(solic, "Solicitante", "Recebe notificações sobre suas reservas")
+
+System_Ext(provedor, "Serviço de Notificação", "Provedor externo de e-mail/push")
+
+Container(portal, "Portal Web FabLab", "React 18 + TypeScript", "SPA usada por solicitantes e administradores")
+ContainerQueue(broker, "Message Broker", "RabbitMQ 3.13", "Exchange fablab.eventos, fila notificacoes.envio e DLQ notificacoes.dlq")
+ContainerDb(db, "Banco de Dados FabLab", "PostgreSQL 16", "Tabelas notificacao, tentativa_envio e auditoria_notificacao")
+
+Container_Boundary(api, "API Back-End — Node.js 20 + NestJS") {
+    Component(reservas, "Componente Reservas", "NestJS Module", "IReservaService.decidirReserva e publicação de eventos")
+    Component(estoque, "Componente Estoque de Insumos", "NestJS Module", "Publica eventos de estoque crítico")
+    Component(compras, "Componente Compras", "NestJS Module", "Publica eventos de aprovação/recusa de compra")
+
+    Component(consumer, "EventoConsumer", "NestJS + amqplib", "Consome eventos e chama INotificacaoService.receberEvento")
+    Component(servico, "NotificacaoService", "NestJS Provider", "Valida destinatário, monta payload, controla retry e máquina de estados")
+    Component(client, "ProvedorNotificacaoClient", "Axios + HTTPS", "Implementa IProvedorNotificacao.enviar com timeout e backoff")
+    Component(webhook, "ConfirmacaoController", "NestJS REST Controller", "Recebe confirmarEntrega do provedor")
+    Component(repo, "NotificacaoRepository", "TypeORM", "salvar, atualizarStatus, registrarTentativa, registrarAuditoria")
+}
+
+Rel(admin, portal, "Decide reservas", "HTTPS")
+Rel(portal, reservas, "decidirReserva(DecisaoReservaDTO)", "HTTPS/REST JSON")
+Rel(reservas, broker, "Publica EventoReservaDTO", "AMQP 0-9-1")
+Rel(estoque, broker, "Publica EventoEstoqueDTO", "AMQP 0-9-1")
+Rel(compras, broker, "Publica EventoCompraDTO", "AMQP 0-9-1")
+Rel(broker, consumer, "Entrega mensagens", "AMQP 0-9-1")
+Rel(consumer, servico, "receberEvento()", "chamada em processo")
+Rel(servico, repo, "Persiste e atualiza status", "chamada em processo")
+Rel(servico, client, "enviar(PayloadNotificacaoDTO)", "chamada em processo")
+Rel(repo, db, "Lê e grava", "SQL / TCP 5432")
+Rel(client, provedor, "POST /v1/notificacoes", "HTTPS/JSON")
+Rel(provedor, webhook, "confirmarEntrega(ConfirmacaoEntregaDTO)", "HTTPS webhook")
+Rel(webhook, servico, "Atualiza status ENTREGUE", "chamada em processo")
+Rel(servico, portal, "publicarAlertaFalha(AlertaFalhaDTO)", "WebSocket")
+Rel(provedor, solic, "Entrega e-mail/push", "SMTP / Push")
+@enduml
